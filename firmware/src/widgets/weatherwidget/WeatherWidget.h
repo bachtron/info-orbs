@@ -1,6 +1,8 @@
 #ifndef WEATHERWIDGET_H
 #define WEATHERWIDGET_H
 
+#ifdef WEATHER_LOCATION
+
 #include "GlobalTime.h"
 #include "Utils.h"
 #include "WeatherDataModel.h"
@@ -72,4 +74,6 @@ private:
     const int MODE_HIGHS = 0;
     const int MODE_LOWS = 1;
 };
+
+#endif // WEATHER_LOCATION
 #endif // WEATHERWIDGET_H

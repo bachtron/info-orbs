@@ -13,6 +13,8 @@
 #include "WeatherWidget.h"
 #include "icons.h"
 
+#ifdef WEATHER_LOCATION
+
 #include "config_helper.h"
 
 WeatherWidget::WeatherWidget(ScreenManager &manager) : Widget(manager) {
@@ -321,3 +323,5 @@ void WeatherWidget::configureColors() {
 String WeatherWidget::getName() {
     return "Weather";
 }
+
+#endif // WEATHER_LOCATION

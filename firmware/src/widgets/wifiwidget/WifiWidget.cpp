@@ -61,6 +61,7 @@ void WifiWidget::setup() {
         Serial.print("WifiManager connected.");
     } else { // ...if connection fails (no saved credentials), it starts an access point with a WiFi setup portal at 192.168.4.1
         m_configPortalRunning = true;
+        m_configPortalStartTime = millis();
         Serial.println("Configuration portal running.");
         m_manager.selectScreen(statusScreenIndex);
         m_manager.clearScreen();
@@ -78,6 +79,13 @@ void WifiWidget::setup() {
 
 void WifiWidget::update(bool force) {
     // Force is currently unhandled due to not knowing what behavior it would change
+
+    // Check if config portal has been running too long (5 minutes)
+    if (m_configPortalRunning && (millis() - m_configPortalStartTime) > m_configPortalTimeout) {
+        Serial.println("Config portal timeout after 5 minutes. Restarting device...");
+        delay(1000);
+        ESP.restart();
+    }
 
     // If WiFiManager is non-blocking, this keeps the configuration portal running
     wifimgr.process();

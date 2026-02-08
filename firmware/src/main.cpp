@@ -6,20 +6,10 @@
 #include "clockwidget/ClockWidget.h"
 #include "config_helper.h"
 #include "icons.h"
-#include "weatherwidget/WeatherWidget.h"
-#include "webdatawidget/WebDataWidget.h"
 #include "wifiwidget/WifiWidget.h"
 #include <Arduino.h>
-
-#ifdef STOCK_TICKER_LIST
-    #include "stockwidget/StockWidget.h"
-#endif
-#ifdef PARQET_PORTFOLIO_ID
-    #include "parqetwidget/ParqetWidget.h"
-#endif
-#ifdef MQTT_WIDGET_HOST
-    #include "mqttwidget/MQTTWidget.h"
-#endif
+#include <WebServer.h>
+#include <ESPmDNS.h>
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -46,8 +36,80 @@ bool isConnected{true};
 
 ScreenManager *sm;
 WidgetSet *widgetSet;
+WebServer server(80);
 
-// This function should probably be moved somewhere else
+// Web server handler functions
+void handleRoot() {
+    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<style>body{font-family:Arial;margin:20px;background:#f0f0f0;}";
+    html += ".container{background:white;padding:20px;border-radius:10px;max-width:400px;margin:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
+    html += "h1{color:#333;text-align:center;}";
+    html += ".control{margin:20px 0;padding:15px;background:#f9f9f9;border-radius:5px;}";
+    html += "label{display:block;margin-bottom:10px;font-weight:bold;color:#555;}";
+    html += "input[type='range']{width:100%;height:30px;}";
+    html += "button{width:100%;padding:12px;margin:5px 0;border:none;border-radius:5px;font-size:16px;cursor:pointer;transition:0.3s;}";
+    html += ".btn-primary{background:#4CAF50;color:white;}.btn-primary:hover{background:#45a049;}";
+    html += ".btn-danger{background:#f44336;color:white;}.btn-danger:hover{background:#da190b;}";
+    html += ".value{display:inline-block;min-width:50px;text-align:center;font-weight:bold;color:#333;}";
+    html += "</style></head><body>";
+    html += "<div class='container'>";
+    html += "<h1>Info Orbs Control</h1>";
+    html += "<div class='control'>";
+    html += "<label>Brightness: <span class='value' id='brightValue'>" + String(sm->getBrightness()) + "</span></label>";
+    html += "<input type='range' id='brightness' min='10' max='255' value='" + String(sm->getBrightness()) + "' oninput='updateBright(this.value)'>";
+    html += "<button class='btn-primary' onclick='setBright()'>Set Brightness</button>";
+    html += "</div>";
+    html += "<div class='control'>";
+    html += "<button class='btn-danger' onclick='if(confirm(\"Reset device?\"))resetDevice()'>Reset Device</button>";
+    html += "</div>";
+    html += "<div style='text-align:center;margin-top:20px;color:#888;font-size:14px;'>Current: " + String(sm->getBrightness()) + "</div>";
+    html += "</div>";
+    html += "<script>";
+    html += "function updateBright(val){document.getElementById('brightValue').innerText=val;}";
+    html += "function setBright(){var b=document.getElementById('brightness').value;";
+    html += "fetch('/brightness?value='+b).then(r=>r.text()).then(d=>{alert(d);location.reload();}).catch(e=>alert('Error'));}";
+    html += "function resetDevice(){fetch('/reset').then(()=>{alert('Device resetting...');}).catch(e=>alert('Error'));}";
+    html += "</script></body></html>";
+    server.send(200, "text/html", html);
+}
+
+void handleBrightness() {
+    if (server.hasArg("value")) {
+        int brightness = server.arg("value").toInt();
+        if (brightness >= 10 && brightness <= 255) {
+            sm->setBrightness(brightness);
+            sm->clearAllScreens();
+            widgetSet->drawCurrent(true);
+            Serial.printf("Brightness set to: %d\n", brightness);
+            server.send(200, "text/plain", "Brightness set to " + String(brightness));
+        } else {
+            server.send(400, "text/plain", "Invalid brightness value (10-255)");
+        }
+    } else {
+        server.send(400, "text/plain", "Missing value parameter");
+    }
+}
+
+void handleReset() {
+    server.send(200, "text/plain", "Resetting device...");
+    delay(500);
+    ESP.restart();
+}
+
+void setupWebServer() {
+    server.on("/", handleRoot);
+    server.on("/brightness", handleBrightness);
+    server.on("/reset", handleReset);
+    server.begin();
+    Serial.println("Web server started on port 80");
+    
+    // Start mDNS
+    if (MDNS.begin("info-orbs")) {
+        Serial.println("mDNS started: http://info-orbs.local");
+        MDNS.addService("http", "tcp", 80);
+    }
+}
+
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
     if (y >= tft.height())
         return 0;
@@ -94,10 +156,10 @@ void setup() {
 
     sm->selectScreen(1);
     sm->drawCentreString("Info Orbs", ScreenCenterX, ScreenCenterY - 50, 22);
-    sm->drawCentreString("by", ScreenCenterX, ScreenCenterY - 5, 22);
-    sm->drawCentreString("brett.tech", ScreenCenterX, ScreenCenterY + 30, 22);
+    sm->drawCentreString("", ScreenCenterX, ScreenCenterY - 5, 22);
+    sm->drawCentreString("", ScreenCenterX, ScreenCenterY + 30, 22);
     sm->setFontColor(TFT_RED);
-    sm->drawCentreString("version: 1.1.0", ScreenCenterX, ScreenCenterY + 65, 14);
+    sm->drawCentreString("v6.7.69", ScreenCenterX, ScreenCenterY + 65, 14);
 
     sm->selectScreen(2);
 
@@ -122,22 +184,8 @@ void setup() {
     globalTime = GlobalTime::getInstance();
 
     widgetSet->add(new ClockWidget(*sm));
-#ifdef PARQET_PORTFOLIO_ID
-    widgetSet->add(new ParqetWidget(*sm));
-#endif
-#ifdef STOCK_TICKER_LIST
-    widgetSet->add(new StockWidget(*sm));
-#endif
-    widgetSet->add(new WeatherWidget(*sm));
-#ifdef WEB_DATA_WIDGET_URL
-    widgetSet->add(new WebDataWidget(*sm, WEB_DATA_WIDGET_URL));
-#endif
-#ifdef WEB_DATA_STOCK_WIDGET_URL
-    widgetSet->add(new WebDataWidget(*sm, WEB_DATA_STOCK_WIDGET_URL));
-#endif
-#ifdef MQTT_WIDGET_HOST
-    widgetSet->add(new MQTTWidget(*sm, MQTT_WIDGET_HOST, MQTT_WIDGET_PORT));
-#endif
+
+    setupWebServer();
 
     m_widgetCycleDelayPrev = millis();
 }
@@ -184,6 +232,8 @@ void checkButtons() {
 }
 
 void loop() {
+    server.handleClient();
+    
     if (wifiWidget->isConnected() == false) {
         wifiWidget->update();
         wifiWidget->draw();

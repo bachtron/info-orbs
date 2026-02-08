@@ -32,6 +32,8 @@ private:
     String m_apssid{""};
     int m_connectionTimer{0};
     const int m_connectionTimeout{10000};
+    unsigned long m_configPortalStartTime{0};
+    const unsigned long m_configPortalTimeout{300000}; // 5 minutes in milliseconds
 };
 
 #endif // WIFIWIDGET_H
